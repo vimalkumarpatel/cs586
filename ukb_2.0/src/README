@@ -1,0 +1,782 @@
+UKB: Words sense disambiguation and lexical similarity/relatedness using
+     unsupervised knowledge-based method.
+
+author: Eneko Agirre and Aitor Soroa
+
+If you use this software in writing scientific papers, or you use this
+software in any other medium serving scientists or students (e.g. web-sites,
+CD-ROMs) please include the citation [1]
+
+* 0. Introduction
+
+This is a collection of programs for performing graph-based Word Sense
+Disambiguation and lexical similarity/relatedness using a pre-existing
+knowledge base. The details of the method are described in [1]. The
+collection comprises four applications:
+
+- compile_kb: creates a machine dependant serialization of a KB graph which
+    	      is then used by the rest of the programs.
+
+- ukb_wsd: main program for WSD.
+
+- ukb_ppv: output a ranking vector over KB nodes.
+
+- convert2.0: utility to convert old (pre 2.0) binary serialization graphs
+              to 2.0 format.
+
+Overall, the ukb_wsd and ukb_ppv applications need three information
+sources:
+
+	1. A knowledge base (concept and relations).
+
+	2. A dictionary (lemma-concept mapping).
+
+	3. An input context.
+
+First, we will see the three components in detail. Then, we will describe
+the applications.
+
+* 1. Knowledge base
+
+The knowledge base (KB) is just a graph where vertices are the KB concepts
+and edges are the relations linking those concepts. Typically, the KB is a
+graph representation of WordNet, but it can be any kind of knowledge base.
+
+The source KB is a text file where each line represents an edge (relation)
+between two vertices (concepts) on the KB. Specifically, lines of source KB
+file follow a key-value syntax. The keys are the following:
+
+   u: the source vertex (concept) of the relation. (required)
+   v: the target vertex (concept) of the relation. (required)
+   d: whether the relation is directed (optional)
+   t: relation type. (optional)
+   s: source of relation. (optional)
+   w: relation weight (Must be positive). (optional)
+
+for instance, the following line:
+
+   u:00001740-n v:00002254-n
+
+represents an undirected relation between concept "00001740-n" and concept
+"00002254-n". The following one:
+
+   u:00023741-n v:02223033-a d:1 w:0.3 s:wn30
+
+represents a directed relation between "00023741-n" and "02223033-a" with
+weight 0.3. It also says that the relation is extracted from the "wn30"
+source. This is useful when we want to filter the relation according to the
+source it was extracted from (see 1.3 "Filtering relations by source").
+
+We currently don't represent the type of relation, and therefore all
+relations are equivalent.
+
+** 1.1 Concept identifiers
+
+Concept identifiers (for example, "00002254-n") have the following syntax:
+
+   string-pos
+
+where the "string" is a unique string and "pos" represents the part of
+speech of the concept.
+
+string: the concept string. it can have any format as long as it doesn't
+     	include either the "#" character or a whitespace character.
+
+pos: part of speech
+    n -> noun
+    v -> verb
+    a -> adjective
+    r -> adverb
+
+However, if the application is called with the '--nopos' command line
+switch, concept ids may have any format (excluding the '#' character and
+whitespaces. See program options).
+
+** 1.2 Compiling the KB
+
+The 'ukb_wsd' and 'ukb_ppv' applications require a compiled binary image of
+the KB, so you first need to compile the input KB text file into a
+platform-dependent binary serialization. The compilation is performed by the
+'compile_kb' application, and must be run just once (for every KB and on
+every different platform the application is expected to work on, that is).
+
+For example, given an input text file "wn17.txt" which looks like:
+
+u:00001740-n v:00002254-n
+u:00001740-n v:00002596-n
+u:00001740-n v:00002908-n
+u:00001740-n v:00004081-n
+u:00001740-n v:00004753-n
+u:00001740-n v:00012351-n
+u:00001740-n v:00012545-n
+u:00001740-n v:00018241-n
+u:00001740-n v:03714099-n
+u:00004753-n v:00018241-n
+
+we first compile it to a binary, platform-dependent format, and leave it on
+a file named 'wn17.bin':
+
+% ./compile_kb -o wn17.bin wn17.txt
+
+We can now ask about the size of the created graph:
+
+% ./compile_kb -i wn17.bin
+Relation sources:
+Notes: (cmd: ./compile_kb -o wn17.bin wn17.txt)
+10 vertices and 10 edges
+
+subsequent uses of 'ukb_wsd' of 'ukb_ppv' applications will just need the
+'wn17.bin' file as KB source.
+
+** 1.3 Filtering relations by source
+
+Sometimes it may be interesting to filter the KB relations according to the
+source they were extracted from. This way, one KB input file can be used to
+produce several binary serializations. Suppose we have the following input
+text:
+
+u:00001740-n v:00002254-n s:wn17
+u:00001740-n v:00002596-n s:wn17
+u:00001740-n v:00002908-n s:xnet_g
+u:00001740-n v:00004081-n s:xnet_g
+u:00001740-n v:00004753-n s:xnet_s
+u:00001740-n v:00012351-n s:xnet_s
+u:00001740-n v:00012545-n s:xnet_s
+u:00001740-n v:00018241-n s:xnet_s
+u:00001740-n v:03714099-n s:xnet_s
+u:00004753-n v:00018241-n s:xnet_s
+
+Some relations correspond to WordNet 1.7 (wn17), and some are extracted from
+eXtended WordNet. The latter are further subdivided into gold relations
+(xnet_g) and silver relations (xnet_s).
+
+To compile the KB using just wn17 source relations, use the -f option (--filter_src):
+
+% ./compile_kb -f "wn17" -o wn17.bin wn17.txt
+% ./compile_kb -i  wn17.bin
+Relation sources: (wn17)
+Notes: (cmd: ./compile_kb -f wn17 -o wn17.bin wn17.txt)
+3 vertices and 2 edges
+
+To use only eXtended WordNet relations:
+
+% ./compile_kb -f "xnet_g,xnet_s" -o wn17.bin wn17.txt
+Relation sources: (xnet_g,xnet_s)
+Notes: (cmd: ./compile_kb -f xnet_g,xnet_s -o wn17.bin wn17.txt)
+8 vertices and 8 edges
+
+** 1.4 Converting old (pre 2.0) binary graphs
+
+ukb version 2.0 is backwards incompatible with the binary format used in
+previous versions. Use "convert2.0" utility to convert old binary
+serializations to the new format. Assuming you have an old "wn17.bin" graph:
+
+% ./convert2.0 -o wn17.new.bin wn17.bin
+
+* 2. Dictionary
+
+The dictionary is just a text file which associates words (typically,
+lemmas) to concepts on the KB. Each line is a dictionary entry, and has the
+following syntax:
+
+wordform concept_id+
+
+For instance, the following line:
+
+cartwheel 02531639-n 00308383-n 11072773-n 01525369-v
+
+associates the entry 'cartwheel' with the concepts 02531639-n,
+00308383-n, 11072773-n and 01525369-v.
+
+* 3. Input context
+
+The input context is a file with the words to be disambiguated. Words have
+to be grouped in contexts (i.e. a sentence or a corpus occurrence window)
+and the algorithm disambiguates all words in a context on the same run. The
+length of the context can be variable, but must be greater than one
+(in-house experiments are performed with contexts of 20 words).
+
+Words in the context must have an entry on the dictionary. Otherwise, the
+system won't be able to relate the context word to KB concepts, and the word
+will not be used for WSD purposes. Therefore, contexts are usually formed by
+content-words, i.e., prepositions, pronouns etc. are not used.
+
+Each context is represented by 2 consecutive lines in the file. The first
+line contains just a token which indicates the context identifier whereas
+the second one actually contains the context. Here is an example of a
+context representing the sentence "The man killed the a cat with a hammer":
+
+ctx_01
+man#n#w1#1 kill#v#w2#1 cat#n#w3#1 hammer#n#w4#1
+
+Each of the elements on a context has 4 mandatory fields, and possibly one fifth
+field, separated by the '#' character. The five fields are:
+
+lemma#pos#id#d#w
+
+- lemma: the lemma of the word (or the concept if if the word is a concept. See
+	 below). Mandatory.
+
+- pos: part of speech.
+
+       n -> noun
+       v -> verb
+       a -> adjective
+       r -> adverb
+
+  The pos field is mandatory unless '--nopos' option is set (or the word is
+  a KB concept. See below). If so, the field must be empty, i.e., something
+  like "man##w1#1" or "08249817-n##id#2".
+
+- id: the word's id. Mandatory.
+
+- d: a control number. Mandatory. Can have three values:
+
+   1: disambiguate the the term
+
+   0: do not disambiguate the term but use it for calculating Personalized
+      PageRank. Although all words in the context play a role in the
+      disambiguation process, sometimes we are just required to disambiguate
+      a portion of it. For example, if we were required to disambiguate just
+      the word "cat" in the above sentence, we would create an input like:
+
+    ctx_01
+    man#n#w1#0 kill#v#w2#0 cat#n#w3#1 hammer#n#w4#0
+
+      i.e., where just the element 'cat' has a 1 in the last field.
+
+   2: the term represents a KB concept instead of a word. For example, such a
+      context is possible:
+
+ctx_01
+man#n#w1#1 kill#v#w2#1 cat#n#w3#0 hammer#n#w4#1 08249817-n##fake_id#2#0.5
+00980806-v##fake_id#2#0.6
+
+      that is, apart of the context words, "08249817-n" and "00980806-v"
+      concepts of KB are also activated with the specified weight when
+      PageRanking. Note that POS field has no meaning when dealing with KB
+      concept terms.
+
+   3: the term is not used in PageRank calculation but is
+      disambiguated. This special value is useful in some
+      circumstances. Suppose that in the dictionary there is a word with
+      three concepts attached:
+
+man   man1-n man2-n man3-n
+
+      and that we include all the concepts in the input context associated
+      with some predefined weights:
+
+ctx_01
+man1-n##c1#2#0.6 man2-n##c2#2#0.3 man3-n##c3#2#0.1 man#n#w1#3
+
+       in this case the last token's field is 3, meaning that we want do
+       disambiguate 'man' but we don't want to activate in PageRank, because
+       all its concepts are already in the context with the desired weights.
+
+- w: a weight (optional)
+
+  the fifth field (if present) has to be a possitive number. The number will
+  be used for calculating the personalized vector for this graph node. In
+  absence, the weight is 1.
+
+* 4. ukb_wsd
+
+The 'ukb_wsd' application performs knowledge-based WSD using a Personalized
+PageRank calculation. It needs a compiled KB, a dictionary and an input
+context.
+
+For example, given that we have a file named "context.txt" file like this:
+
+ctx_01
+man#n#w1#1 kill#v#w2#1 cat#n#w3#1 hammer#n#w4#1
+
+a previously compiled KB file named "wn17.bin" (see section 1.2, "Compiling
+the KB"), and a dictionary file named "wn17_dict.txt".
+
+For disambiguating the context, type:
+
+% ./ukb_wsd --ppr -K wn17.bin -D wn17_dict.txt context.txt
+
+The result would look like the following:
+
+!! ./ukb_wsd --ppr -K wn17.bin -D wn17_dict.txt context.txt
+ctx_01 w1  08249817-n !! man
+ctx_01 w2  00980806-v !! kill
+ctx_01 w3  01738104-n !! cat
+ctx_01 w4  02970821-n !! hammer
+
+The system returns the results following the keyfile format of
+Senseval/Semeval lexical sample. The first line is a commentary and stores
+the command that actually created the file. Then, for each disambiguated
+word it returns a line formed by:
+
+context_id word_id (concept_id(/weight)?)+ !! lemma
+
+after the context id and word id, the system returns the concept associated
+to the word which has maximum rank, i.e., the program's guess about the
+sense of the word in the context. Then, and after a comment mark (!!), the
+lemma of the original word is also displayed.
+
+** 4.1 Command-line options
+
+The 'ukb_wsd' application has several options:
+
+*** General options:
+
+  --version
+
+  Show version.
+
+  -K [ --kb_binfile ] arg
+
+  Binary file of KB previously created by the 'compile_kb' application.
+
+  -D [ --dict_file ] arg
+
+  Dictionary text file.
+
+*** WSD options
+
+You must choose one WSD method. Currently there are five methods, namely,
+'ppr', 'ppr_w2w', 'static', 'dgraph_bfs' and 'dgraph_dfs'. All methods
+perform some ranking on the concepts of the KB; disambiguation is then
+choosing the concept associated to a word with maximum rank.
+
+  --ppr
+
+  Given an input context, disambiguate the target words using Personalized
+  PageRank method. This is the default method.
+
+  --ppr_w2w
+
+  Given an input context, disambiguate the target words using Personalized
+  PageRank method word by word.
+
+  --static
+
+  Given an input context, disambiguate the target words using static (non
+  personalized) PageRank over the KB.
+
+  --dgraph_bfs
+
+  Given an input context, disambiguate the target words using disambiguation
+  graph method, BFS variant.
+
+  --dgraph_dfs
+
+  Given an input context, disambiguate the target words using disambiguation
+  graph method, DFS variant.
+
+The first two methods ('ppr' and 'ppr_w2w'), apply the so called
+"Personalized PageRank" (PPR) over the whole KB. See [1] for further details
+about the PPR method. In general, ppr_w2w yields to better results, but it
+is slower if you want to disambiguate more than one word in a context (i.e.,
+more than one context word has the fourth field filled with 1. See [[3. Input
+context]]). In particular, the 'ppr' method performs one PageRank calculation
+for the whole context, whereas the 'ppr_w2w' method performs one PageRank
+computation for each target word.
+
+The 'static' method is a baseline. It just calculates a standard (i.e., not
+personalized) PageRank over the KB and disambiguates all context words
+accordingly. The method is thus context independent and very quick: a sole
+PageRank calculation suffices to disambiguate all the input document.
+
+The last two dgraph methods are somehow different. Instead of PageRanking
+over the whole KB, they first extracts a subgraph with the most relevant
+concepts of a given context. There are two methods for extracting the
+subgraph: "dgraph_bfs", which uses Breadth First Search (shortest paths) and
+"dgraph_dfs", using Depth First Search. After the extraction phase, they
+both apply a ranking algorithm over the subgraph for disambiguating the
+context.
+
+More WSD options:
+
+  --nostatic
+
+  Substract static ppv to final ranks.
+
+  --noprior
+
+  Don't multiply priors to target word synsets if --ppr_w2w and
+  --dict_weight are selected.
+
+*** PageRank general options:
+
+  --prank_weight [ -w ]
+
+  Use weigths in PageRank calculation.
+
+  --prank_iter arg
+
+  Number of iterations in PageRank. Default is 30.
+
+  --prank_threshold arg
+
+  Threshold for stopping PageRank. Default is zero. Good value is 0.0001.
+
+The policy for knowing when to stop the pageRank algorithm is the following:
+
+  "iterate until L1 is below threshold or max. number of iterations is
+  reached."
+
+if only one switch is set (--prank_iter or --prank_threshold), the other
+switch is set to zero (so it has no effect). You can however set both
+switches, and the algorithm will stop whenever the first convergence
+criterium is met. Note that this is the default scenarion, where
+--prank_iter is set to 30 AND --prank_threshold is set to 0.0001.
+
+  --prank_damping
+
+  Set the damping factor of PageRank equation. Default is 0.85
+
+  --dgraph_rank
+
+  Set disambiguation method for dgraphs (either dgraph_bfs or
+  dgraph_dfs). Options are: static(default), ppr, ppr_w2w, degree.
+
+  --dgraph_maxdepth arg
+
+  If --dgraph_dfs is set, specify the maximum depth (default is 6).
+
+  --dgraph_nocosenses
+
+  If --dgraph_dfs is set, stop DFS when finding one co-sense of target word
+  in path.
+
+*** Input options
+
+  --nopos
+
+  Do not filter by POS when linking context words to the concepts they are
+  attached to. When --nopos is set, the concept id's of the graph can have
+  any format, excluding the '#' character (and whitespace).
+
+  --minput
+
+  Do not exit when dealing with malformed input. Usually ukb stops when
+  input data has errors. With this option set, the program tries to go
+  ahead.
+
+  --ctx_noweight
+
+  Do not use weights of input words (defaut is use context weights).
+
+*** Dictionary options:
+
+  --dict_weight
+
+  Use weights when linking words to concepts.
+
+  --dict_weight_smooth arg
+
+  Smoothing factor to be added to every dictionary concept weight. Default
+  is 1.
+
+  --dict_strict
+
+  Be strict when reading the dictionary and stop when any error is found
+  (for instance when a concept is not in the graph).
+
+
+*** Output options:
+
+  --allranks
+
+  Write key file with all synsets associated with ranks. The system will
+  return all the concepts attached to that word in the KB, along with a
+  weight, ordered in decreasing order. For example in the previous example,
+  it would produce the following example:
+
+% ./ukb_wsd --ppr --allranks -K wn17.bin -D wn17_dict.txt context.txt
+!! ./ukb_wsd --ppr --allranks -K wn17.bin -D wn17_dict.txt context.txt
+ctx_01 w1  08249817-n/0.207209 02078052-n/0.0929814 ... !! man
+ctx_01 w2  00980806-v/0.114124 00267266-v/0.0808975 ... !! kill
+ctx_01 w3  01738104-n/0.24285 02542955-n/0.129899 ... !! cat
+ctx_01 w4  02970821-n/0.16454 06073651-n/0.110485 ... !! hammer
+
+  -v [ --verbose ]
+
+  Be verbose.
+
+  --no-monosemous
+
+  Don't output anything for monosemous words.
+
+  --ties
+
+  ukb does not return anything when the concepts associated to a target word
+  have the same ranking score (because the algorithm didn't manage to
+  disambiguate the instance). If --ties is set ukb will return one concept,
+  randomly chosen among possibles (or all concepts with same value if
+  --allranks is set).
+
+  --rank_nonorm
+
+  Do not normalize the ranks of target words. Ukb normalizes the scores
+  given to each sense of a word so that they sum up to 1. With this option,
+  the score of each sense is just it's pageRank (or alternative method).
+
+* 5. ukb_ppv
+
+The 'ukb_ppv' application outputs the ranks of the KB concepts (the so-called
+Personalized PageRank Vector, PPV) after applying a Personalized PageRank over
+it, given an input context. Given the previously "context.txt", the "wn17.bin"
+KB and "wn17_dict.txt" dictionary, we can extract the PPV by executing:
+
+% ./ukb_ppv -K wn17.bin -D wn17_dict.txt -O /tmp context.txt
+
+The program will create a file named /tmp/ctx_01.ppv with the rank values of
+every node in the KB. The program creates a ppv file for every context in the
+input file. Then, each file consist on several lines, one per vertex, with 2
+fields each, the vertex name and associated rank. The ranks are normalized so
+that its sum is equal to 1.
+
+% head /tmp/ctx_01.ppv
+00001740-n	1.52558e-05
+00002254-n	1.18902e-06
+00002596-n	2.94184e-05
+00002908-n	6.08192e-05
+00004081-n	2.48344e-05
+00004753-n	4.26906e-05
+00012351-n	6.15679e-07
+00012545-n	5.38229e-05
+00018241-n	2.56861e-06
+03714099-n	7.9106e-07
+
+
+** 5.1 Command-line options
+
+The 'ukb_ppv application has several options:
+
+*** General options:
+
+  --version
+
+  Show version.
+
+  -K [ --kb_binfile ] arg
+
+  Binary file of KB previously created by the 'compile_kb'
+  application.
+
+  -O [ --out_dir ] arg
+
+  Directory for leaving output PPV files. Default is the current directory.
+
+  -S [ --static ]
+
+  Compute static PageRank ppv. Only -K option is needed. Output to STDOUT.
+
+  -D [ --dict_file ] arg
+
+  Dictionary file.
+
+  -v [ --verbose ]
+
+  Be verbose.
+
+*** Input options
+
+  --nopos
+
+  Don't filter words by Part of Speech. Same as ukb_wsd --nopos option.
+
+  --minput
+
+  Do not die when dealing with malformed input. Same as ukb_wsd --minput option.
+
+  --ctx_noweight
+
+  Do not use weights of input words (defaut is use context weights). Same as
+  ukb_wsd --ctx_noweight option.
+
+*** PageRank general options (see also ukb_wsd "PageRank general options")
+
+  -w [ --prank_weight ]
+
+  Use weigths in pageRank calculation. Serialized graph edges must have some
+  weight.
+
+  --prank_iter arg
+
+  Number of iterations in pageRank. Default value is 30.
+
+  --prank_threshold arg
+
+  Threshold for pageRank convergence. Default is 0.0001.
+
+  --prank_damping arg
+
+  Set damping factor in PageRank equation. Default is 0.85.
+
+*** Dictionary options (see also ukb_wsd "Dictionary options")
+
+  --dict_weight
+
+  Use weights when linking words to concepts (dict file has to have
+  weights).
+
+  --dict_weight_smooth arg
+
+  Smoothing factor to be added to every weight in dictionary
+  concepts. Default is 1.
+
+  --dict_strict
+
+  Be strict when reading the dictionary and stop when any error is found.
+
+*** Output options:
+
+  --nostatic
+
+  Substract static ppv to final ranks.
+
+  --trunc_ppv arg
+
+  Truncate PPV threshold. If arg > 1, return top arg nodes.
+
+  --trunc_topK arg
+
+  Return top arg nodes.
+
+  --nozero
+
+  Do not return concepts with zero rank.
+
+  -r [ --variants ]
+
+  Write also concept variants in PPV.
+
+  Following the example present in the beginning of the section, if we call
+
+  % ./ukb_ppv -K wn17.bin -D wn17_dict.txt --variants -O /tmp context.txt
+  
+  we get the following:
+
+  % head /tmp/ctx_01.ppv 
+
+  00001740-n	1.52558e-05	entity#1
+  00002254-n	1.18902e-06	thing#1
+  00002596-n	2.94184e-05	unit#1, whole#1, whole_thing#1
+  00002908-n	6.08192e-05	being#1, living_thing#1, organism#1
+  00004081-n	2.48344e-05	cell#1
+  00004753-n	4.26906e-05	causal_agency#1, causal_agent#1, cause#1
+  00012351-n	6.15679e-07	holy_of_holies#1
+  00012545-n	5.38229e-05	object#1, physical_object#1
+  00018241-n	2.56861e-06	location#1
+  03714099-n	7.9106e-07	content#1, depicted_object#1, subject#1
+
+  the third field is the 'variants', a string formed by joining all the words
+  linked to the synset. The number after the '#' in the words is the sense
+  number.
+
+  -l [ --control_line ]
+
+  Add a line in PPVs with control information (ukb version command-line switches etc).
+
+  % ./ukb_ppv -K wn17.bin -D wn17_dict.txt -l -O /tmp context.txt
+  % head /tmp/ctx_01.ppv 
+
+  !! -v 0.1.6.51.g38e133b.dirty ./ukb_ppv -K wn17.bin -D wnet17_dict.txt -l -O /tmp context.txt
+  00001740-n	1.52558e-05
+  00002254-n	1.18902e-06
+  00002596-n	2.94184e-05
+  ...
+
+  -p [ --prefix ] arg
+
+  Prefix added to all output ppv files.
+
+  --ranks_nonorm
+
+  Do not normalize ranks when --trunc_ppv or --trunk_topK switches are set.
+
+* 6. compile_kb
+
+Use 'compile_kb' for creating biary serializations of graphs (See "1.2
+Compiling the KB section")
+
+** 6.1 Command-line options
+
+The main purpose of compile_kb is to compile binary graphs, but it also can
+be used to obtain information from already compiled graphs.
+
+*** Options for creating binary graphs
+
+  -o [ --output ] arg
+
+  Output file name.
+
+  -f [ --filter_src ] arg
+
+  Filter relations according to their sources. See "1.3 Filtering relations
+  by source" section)
+
+  -U [ --undirected ]
+
+  Force undirected graph. Edges are undirected, regardless of what "d:"
+  field says.
+
+  -r [ --rtypes ]
+
+  Keep relation types on edges.
+
+  --minput
+
+  Do not exit when dealing with malformed input.
+
+  --note
+
+  Add a comment to the binary graph. The note will be appended to the actual
+  command line which created the serialized graph.
+
+Note: if the input file name is "-", compile_kb reads the input from
+standard input, so you can do things like:
+
+% cat g1.txt g2.txt | ./compile_kb -o g.bin -
+
+You can add a comment to track the source files used to create the binary
+graph:
+
+% cat g1.txt g2.txt | ./compile_kb --note "g1.txt g2.txt" -o g.bin -
+
+*** Options for querying graphs
+
+  -i [ --info ]
+
+  Give info about some Kb binfile.
+
+  -I [ --Info ]
+
+  Give more info about Kb binfile. This option can be computationally
+  expensive, as it also calculates the strong components on the graph.
+
+  --dump
+
+  Dump a serialized graph. Warning: very verbose!.
+
+  -q [ --query ] arg
+
+  Given a vertex name, display its relations.
+
+  -Q [ --iquery ]
+
+  Interactively query graph.
+
+  -D [ --dict_file ] arg
+
+  Word to synset map file. Useful only when used when querying (--quey or
+  --iquery).
+
+* 7. References
+
+[1] Eneko Agirre and Aitor Soroa. 2009. Personalizing PageRank for Word
+    Sense Disambiguation. Proceedings of the 12th conference of the European
+    chapter of the Association for Computational Linguistics
+    (EACL-2009). Athens, Greece.
+
+See also
+
+   LICENSE for copyright and licensing, and INSTALL for generic installation
+   instructions.
