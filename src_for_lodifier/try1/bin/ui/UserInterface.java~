@@ -1,0 +1,223 @@
+package ui;
+
+import java.io.BufferedInputStream;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.DataInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import conf.LODifierProperties;
+
+import pipeline.Pipeline;
+
+import ner.Wikifier;
+
+public class UserInterface {
+	
+	private static String rdf_output_file = null;  // rdf output file
+	private static String cc_input = "";
+	private static String boxer_path = null;
+	private static String cc_output = "";
+	private static String boxer_output = "";
+    private static Properties config = new LODifierProperties();
+	
+	/**
+	 * main-method for LODifier
+	 * @param args
+	 * @throws IOException
+	 */
+	public static void main(String[] args) throws IOException {
+
+		/*
+		try {
+    		
+			System.out.println("Please provide the absolute path to an input text file: ");
+			BufferedReader BR = new BufferedReader(new InputStreamReader(System.in));
+			String dataFile ="";
+			while (dataFile.equals("")){
+				try{
+					dataFile = BR.readLine();	
+						try {
+							String str = "";
+	    					FileReader input2 = new FileReader(dataFile); 
+	    					BufferedReader bufRead = new BufferedReader(input2); 
+							do {
+	    		    		str = bufRead.readLine();
+	    		    		if (str != null) {
+	    		    			cc_input = cc_input.concat(str);
+	    		    			}
+	    		    		}
+							while (str != null);
+	    		    		} //end try 
+						catch (FileNotFoundException f){ //catches wrong file input
+							System.out.println("File "+dataFile+" does not exist. Please retry: ");
+							dataFile ="";
+							//f.printStackTrace();  
+						} //end catch
+					} //end try
+				catch (IOException e){ //catches no input
+				System.out.println("Invalid input, please retry: ");
+				dataFile ="";
+				} //end catch
+			}//end while 
+			
+			System.out.println("Please provide the path to your boxer directory(e.g. /home/user1/candc/): ");
+			BufferedReader BR11 = new BufferedReader(new InputStreamReader(System.in));
+			String dataFile11 ="";
+			while (dataFile11.equals("")){
+				try{
+					dataFile11 = BR11.readLine();	
+						try {
+	    					File input = new File(dataFile11);
+	    		    		setBoxer_path(input.toString());
+	    		    		} //end try 
+						catch (Exception f){ //catches wrong file input
+							System.out.println("Directory "+dataFile11+" does not exist. Please retry: ");
+							dataFile11 ="";
+							//f.printStackTrace();
+						} //end catch
+					} //end try
+				catch (IOException e){ //catches no input
+				System.out.println("Invalid input, please retry: ");
+				dataFile11 ="";
+				} //end catch
+			}//end while 	
+			
+			
+			System.out.println("Please provide the absolute path to an output file: ");
+			BufferedReader BR1111 = new BufferedReader(new InputStreamReader(System.in));
+			String dataFile1111 ="";
+			while (dataFile1111.equals("")){
+				try{
+					dataFile1111 = BR1111.readLine();	
+						try {
+	    					setRdf_output_file(new FileWriter(dataFile1111));
+	    		    		} //end try 
+						catch (FileNotFoundException f){ //catches wrong file input
+							System.out.println("File "+dataFile1111+" does not exist. Please retry: ");
+							dataFile1111 ="";
+							//f.printStackTrace();
+						} //end catch
+					} //end try
+				catch (IOException e){ //catches no input
+				System.out.println("Invalid input, please retry: ");
+				dataFile1111 ="";
+				} //end catch
+			}//end while 	
+						    			
+		} finally {} */
+		
+        if (args.length < 2) {
+            System.out.println("Usage: $ java -jar LODifier.jar <input file> <output file>\ne.g. '$ java -jar LODifier.jar input.txt output.txt'");
+        } else {
+            String cc_in = args[0];
+            String rdf_out = args[1];
+            
+            byte[] buffer = new byte[(int) new File(cc_in).length()];
+            BufferedInputStream f = new BufferedInputStream(new FileInputStream(cc_in));
+            f.read(buffer);
+            setCC_input(new String(buffer));
+            setRdf_output_file(rdf_out);
+            setBoxer_path(config.getProperty("boxer.path"));
+            setCC_output(config.getProperty("parser.out"));
+            setBoxer_output(config.getProperty("boxer.out"));
+            
+    		Pipeline pipeline = new Pipeline();
+    		pipeline.startPipeline();
+        }
+        
+    }
+		
+
+	/**
+	 * setter-method for rdf_output_file
+	 * @param p_rdf_output_file file path for the rdf triples
+	 */
+	public static void setRdf_output_file(String p_rdf_output_file) {
+		rdf_output_file = p_rdf_output_file;
+	}
+
+	/**
+	 * getter-method for rdf_output_file
+	 * @return file path for the rdf triples
+	 */
+	public String getRdf_output_file() {
+		return rdf_output_file;
+	}
+
+	/**
+	 * setter-method for boxer_path
+	 * @param boxer_path path to boxer
+	 */
+	public static void setBoxer_path(String boxer_path) {
+		UserInterface.boxer_path = boxer_path;
+	}
+
+	/**
+	 * getter-method for the boxer-path
+	 * @return path to boxer
+	 */
+	public static String getBoxer_path() {
+		return boxer_path;
+	}
+	
+	/**
+	 * getter-method for cc_input
+	 * @return text to be processed by the pipeline
+	 */
+	public static String getCC_input() {
+		return cc_input;
+	}
+	
+	/**
+	 * setter-method for cc_input
+	 * @param p_cc_input text to be processed by the pipeline
+	 */
+	public static void setCC_input(String p_cc_input) {
+		cc_input = p_cc_input;
+	}
+
+	/** 
+	 * setter-method for cc_output
+	 * @param cc_output file path for the parser output
+	 */
+	public static void setCC_output(String cc_output) {
+		UserInterface.cc_output = cc_output;
+	}
+
+	/**
+	 * getter-method for cc_output
+	 * @return file path for parser output
+	 */
+	public static String getCC_output() {
+		return cc_output;
+	}
+
+	/**
+	 * setter-method for boxer_output
+	 * @param boxer_output file path for the boxer output
+	 */
+	public static void setBoxer_output(String boxer_output) {
+		UserInterface.boxer_output = boxer_output;
+	}
+
+	/**
+	 * getter-method for boxer_output
+	 * @return file path to the boxer output
+	 */
+	public static String getBoxer_output() {
+		return boxer_output;
+	}
+
+}
